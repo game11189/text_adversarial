@@ -22,7 +22,7 @@ from torch.utils.data.dataloader import default_collate
 
 from settings import EXPERIMENTS_DIR
 from experiment import Experiment
-from utils import to_device, load_weights, load_embeddings, create_embeddings_matrix
+from utils2 import to_device, load_weights, load_embeddings, create_embeddings_matrix
 from vocab import Vocab
 from train2 import create_model
 from preprocess import load_dataset, create_dataset_reader
@@ -69,117 +69,6 @@ parser.add_argument('--new_encoder', action='store_true',
 		    help='try the new encoder!')
 args = parser.parse_args()
 
-def create_inputs(instances):
-    if not isinstance(instances, list):
-        instances = [instances,]
-        
-    if not isinstance(instances[0], dict):
-        sentences = [
-            dataset_reader.preprocess_sentence(dataset_reader.spacy( dataset_reader.clean_sentence(sent)))
-            for sent in instances
-        ]
-        
-        style = list(style_vocab.token2id.keys())[0]
-        instances = [
-            {
-                'sentence': sent,
-                'style': style,
-            }
-            for sent in sentences
-        ]
-        
-        for inst in instances:
-            inst_encoded = dataset_train.encode_instance(inst)
-            inst.update(inst_encoded)            
-    
-    
-    instances = [
-        {
-            'sentence': inst['sentence_enc'],
-            'style': inst['style_enc'],
-        } 
-        for inst in instances
-    ]
-    
-    instances = default_collate(instances)
-    instances = to_device(instances)      
-    
-    return instances
-
-def get_sentences(outputs):
-    predicted_indices = outputs["predictions"]
-    end_idx = vocab[Vocab.END_TOKEN]
-    
-    if not isinstance(predicted_indices, np.ndarray):
-        predicted_indices = predicted_indices.detach().cpu().numpy()
-
-    all_predicted_tokens = []
-    for indices in predicted_indices:
-        indices = list(indices)
-
-        # Collect indices till the first end_symbol
-        if end_idx in indices:
-            indices = indices[:indices.index(end_idx)]
-
-        predicted_tokens = [vocab.id2token[x] for x in indices]
-        all_predicted_tokens.append(predicted_tokens)
-        
-    return all_predicted_tokens
-
-
-
-if args.new_encoder:
-#---------------------------------------------------
-    print("YAY")
-    exp_id = 'train.jaw89lze'
-    exp = Experiment.load(EXPERIMENTS_DIR, exp_id)
-    preprocess_exp = Experiment.load(EXPERIMENTS_DIR, exp.config.preprocess_exp_id)
-    dataset_train, dataset_val, dataset_test, vocab, style_vocab, W_emb = load_dataset(preprocess_exp)
-    dataset_reader = create_dataset_reader(preprocess_exp.config)
-    model = create_model(exp.config, vocab, style_vocab, dataset_train.max_len, W_emb)
-    load_weights(model, exp.experiment_dir.joinpath('best.th'))
-    model = model.eval()
-    sentence =  ' '.join(dataset_val.instances[1]['sentence'])
-    print(sentence)
-    inputs = create_inputs(sentence)
-    print(inputs)
-    outputs = model(inputs)
-    sentences = get_sentences(outputs)
-    print(' '.join(sentences[0]))
-    
-    exit(1)
-#--------------------------------------------------
-
-#    criterion = nn.CrossEntropyLoss().cuda()
-#    
-#    niter = 0
-#    evaluate = 0
-#    nevaluate = 0
-#    idx2words = dict(map(lambda x: (x[1], x[0]), corpus_vocab.items()))
-#    while niter < len(testloader):
-#        niter += 1
-#        batch = train_iter.next()
-#        print(batch)
-#        for p, h, t, pw, hw, pl, hl in zip(*batch):
-#            nh = perturb(criterion, p.cuda(), h.cuda(), t.cuda(), pw, hw, pl, hl)
-#            print('--------------------------------')
-#            print('Target ', t)
-#            print(' '.join(pw))
-#            print(' '.join(hw))
-#            nhw = (['<sos>'] + [idx2words[i] for i in nh])[:10]
-#            print(' '.join(nhw))
-#            print('Old ', classifier_pred(pw, hw))
-#            print('New ', classifier_pred(pw, nhw))
-#            print('Old Pred: ', maximum(classifier_pred(pw, hw)))
-#            print('New Pred: ', maximum(classifier_pred(pw, nhw)))
-#            print('Good: ', maximum(classifier_pred(pw, hw)) != maximum(classifier_pred(pw, nhw)))
-#            evaluate = evaluate + int(maximum(classifier_pred(pw, hw)) != maximum(classifier_pred(pw, nhw)))
-#            nevaluate = nevaluate + 1
-#    print(evaluate / nevaluate)
-#    print(nevaluate)
-
-
-
 #cur_dir = './output/%s/' % args.load_pretrained
 cur_dir = args.load_pretrained
 
@@ -200,8 +89,6 @@ torch.manual_seed(args.seed)
 
 EPS = args.perturb_budget
 
-
-
 autoencoder = torch.load(open(cur_dir + '/models/autoencoder_model.pt', 'rb'))
 #gan_gen = torch.load(open(cur_dir + '/models/gan_gen_model.pt', 'rb'))
 #gan_disc = torch.load(open(cur_dir + '/models/gan_disc_model.pt', 'rb'))
@@ -215,6 +102,16 @@ vocab_classifier1 = pkl.load(open(args.classifier_path + "/vocab.pkl", 'rb'))
 mlp_classifier = MLPClassifier(args.z_size * 2, 3, layers=args.surrogate_layers)
 if not args.train_mode:
     mlp_classifier.load_state_dict(torch.load(args.save_path+'/surrogate{0}.pt'.format(args.surrogate_layers)))
+
+#----------------------------------------------
+exp_id = 'train.3ir9y_e3'
+exp = Experiment.load(EXPERIMENTS_DIR, exp_id)
+preprocess_exp = Experiment.load(EXPERIMENTS_DIR, exp.config.preprocess_exp_id)
+dataset_train, dataset_val, dataset_test, vocab, style_vocab, W_emb = load_dataset(preprocess_exp)
+dataset_reader = create_dataset_reader(preprocess_exp.config)
+model = create_model(exp.config, vocab, style_vocab, dataset_train.max_len, W_emb)
+load_weights(model, exp.experiment_dir.joinpath('best.th'))
+#---------------------------------------------
 
 print(classifier1)
 print(autoencoder)
@@ -372,7 +269,149 @@ def maximum(arr):
             t = i
     return t
 
-if args.train_mode:
+def create_inputs(instances):
+    if not isinstance(instances, list):
+        instances = [instances,]
+        
+    if not isinstance(instances[0], dict):
+        sentences = [
+            dataset_reader.preprocess_sentence(dataset_reader.spacy( dataset_reader.clean_sentence(sent)))
+            for sent in instances
+        ]
+        
+        style = list(style_vocab.token2id.keys())[0]
+        instances = [
+            {
+                'sentence': sent,
+                'style': style,
+            }
+            for sent in sentences
+        ]
+        
+        for inst in instances:
+            inst_encoded = dataset_train.encode_instance(inst)
+            inst.update(inst_encoded)            
+    
+    
+    instances = [
+        {
+            'sentence': inst['sentence_enc'],
+            'style': inst['style_enc'],
+        } 
+        for inst in instances
+    ]
+    
+    instances = default_collate(instances)
+    instances = to_device(instances)      
+    
+    return instances
+
+def get_sentences(outputs):
+    predicted_indices = outputs["predictions"]
+    end_idx = vocab[Vocab.END_TOKEN]
+    
+    if not isinstance(predicted_indices, np.ndarray):
+        predicted_indices = predicted_indices.detach().cpu().numpy()
+
+    all_predicted_tokens = []
+    for indices in predicted_indices:
+        indices = list(indices)
+
+        # Collect indices till the first end_symbol
+        if end_idx in indices:
+            indices = indices[:indices.index(end_idx)]
+
+        predicted_tokens = [vocab.id2token[x] for x in indices]
+        all_predicted_tokens.append(predicted_tokens)
+        
+    return all_predicted_tokens
+
+def perturb_new(criterion, premise, hypothesis, target, premise_words, hypothesis_words, premise_length, hypothesis_length):
+    autoencoder.eval()
+    inverter.eval()
+    classifier1.eval()
+    mlp_classifier.eval()
+    model.eval()
+    
+    premise_words = [premise_words]
+    hypothesis_words = [hypothesis_words]
+    premise_length = [premise_length]
+    hypothesis_length = [hypothesis_length]
+
+
+    premise_idx = torch.tensor([[corpus_vocab.get(w, 3) for w in s] for s in premise_words]).cuda()
+    hypothesis_idx = torch.tensor([[corpus_vocab.get(w, 3) for w in s] for s in hypothesis_words]).cuda()
+#     print('premise_idx = ' + str(premise_idx))
+#     print('hypothesis-idx = ' + str(hypothesis_idx))
+#     c_prem = autoencoder.encode(premise_idx, premise_length, noise=False)
+#     print("OLD C_PREM")
+#     print(c_prem.shape)
+#     print(premise_words[0])
+    c_prem = model(create_inputs(' '.join(premise_words[0])))['style_hidden']
+#     print("C_PREM")
+#     print(c_prem)
+#     print("----")
+#     c_prem = create_inputs(' '.join(premise_words[0]))
+    z_prem = inverter(c_prem).detach()
+#     print('c_prem = ' + str(c_prem))
+#     print('z_prem = ' + str(z_prem))
+#     c_hypo = autoencoder.encode(hypothesis_idx, hypothesis_length, noise=False).detach()
+    c_hypo = model(create_inputs(' '.join(hypothesis_words[0])))['style_hidden'].detach()
+#     print("C_HYPO")
+#     print(c_hypo)
+#     print("------")
+    c_hypo.requires_grad = True
+    z_hypo = inverter(c_hypo)
+
+
+    premise = premise.unsqueeze(0)
+    hypothesis = hypothesis.unsqueeze(0)
+    target = target.unsqueeze(0)
+
+    output = mlp_classifier(z_prem, z_hypo)
+#     print("OUTPUT")
+#     print(output)
+
+    loss = criterion(output, target)
+    mlp_classifier.zero_grad()
+    inverter.zero_grad()
+    loss.backward()
+
+    direction = torch.sign(c_hypo.grad)
+    nc_hypo = c_hypo + EPS * direction
+    nhypo_idx = autoencoder.generate(nc_hypo, 10, False)
+
+    return nhypo_idx.squeeze(0).cpu().numpy()
+
+
+if args.new_encoder:
+    criterion = nn.CrossEntropyLoss().cuda()
+    niter = 0
+    evaluate = 0
+    nevaluate = 0
+    idx2words = dict(map(lambda x: (x[1], x[0]), corpus_vocab.items()))
+    while niter < len(testloader):
+        niter += 1
+        batch = train_iter.next()
+        for p, h, t, pw, hw, pl, hl in zip(*batch):
+            nh = perturb_new(criterion, p.cuda(), h.cuda(), t.cuda(), pw, hw, pl, hl)
+            print('--------------------------------')
+            print('Target ', t)
+            print(' '.join(pw))
+            print(' '.join(hw))
+            nhw = (['<sos>'] + [idx2words[i] for i in nh])[:10]
+            print(' '.join(nhw))
+            print('Old ', classifier_pred(pw, hw))
+            print('New ', classifier_pred(pw, nhw))
+            print('Old Pred: ', maximum(classifier_pred(pw, hw)))
+            print('New Pred: ', maximum(classifier_pred(pw, nhw)))
+            print('Good: ', maximum(classifier_pred(pw, hw)) != maximum(classifier_pred(pw, nhw)))
+            evaluate = evaluate + int(maximum(classifier_pred(pw, hw)) != maximum(classifier_pred(pw, nhw)))
+            nevaluate = nevaluate + 1
+    print(evaluate / nevaluate)
+    print(nevaluate)
+
+elif args.train_mode:
     # evaluate_model()
 
     for epoch in range(0, args.epochs):
