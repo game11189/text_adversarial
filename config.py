@@ -9,7 +9,7 @@ from settings import SHAKESPEARE_DATASET_DIR, YELP_DATASET_DIR
 @dataclasses.dataclass
 class TrainConfig:
     model_class: type = Seq2SeqMeaningStyle
-    preprocess_exp_id: str = 'preprocess.ro25p97w'  # Shakespeare: xxx | Yelp: 2p089c54
+    preprocess_exp_id: str = 'preprocess.3ir9y_e3'  # Shakespeare: xxx | Yelp: 2p089c54
 
     embedding_size: int = 300
     hidden_size: int = 256
